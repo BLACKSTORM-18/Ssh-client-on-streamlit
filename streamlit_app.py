@@ -1,61 +1,76 @@
 import streamlit as st
 import subprocess
-import time
 import os
+import time
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="VOID LINUX ROOT", page_icon="💀", layout="wide")
-st.title("💀 VOID ROOT SERVER")
+st.set_page_config(page_title="VOID_NGROK_CLOUD", page_icon="⚡")
 
-# --- THE ENGINE ---
-# This runs once and NEVER kills your session unless you tell it to.
+# 1. AUTH CHECK
+if "unlocked" not in st.session_state:
+    st.session_state.unlocked = False
+
+if not st.session_state.unlocked:
+    pwd = st.text_input("Enter Access Key:", type="password")
+    if st.button("Unlock"):
+        if pwd == st.secrets["auth"]["password"]:
+            st.session_state.unlocked = True
+            st.rerun()
+    st.stop()
+
+# 2. THE SSH + NGROK ENGINE
 @st.cache_resource
-def start_server():
-    # 1. Check if Tmate is already running
-    # This prevents the "Handshake Failed" error by not restarting the server constantly
-    check = subprocess.run(["pgrep", "-x", "tmate"], capture_output=True)
+def start_ngrok_ssh():
+    # Setup Ngrok Binary
+    if not os.path.exists("./ngrok"):
+        subprocess.run(["wget", "https://bin.equinox.io/c/b34239N4Z76/ngrok-v3-stable-linux-amd64.tgz"], stderr=subprocess.DEVNULL)
+        subprocess.run(["tar", "-xvzf", "ngrok-v3-stable-linux-amd64.tgz"], stderr=subprocess.DEVNULL)
     
-    if check.returncode != 0:
-        # Not running? Start it.
-        subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"], close_fds=True)
-        # Wait for internet connection
-        subprocess.run(["tmate", "-S", "/tmp/tmate.sock", "wait-for-connection"], timeout=10)
-        
+    # Configure Ngrok
+    token = st.secrets["auth"]["ngrok_token"]
+    subprocess.run(["./ngrok", "config", "add-authtoken", token])
+
+    # Setup SSH Server (sshd)
+    # Create a user 'void' with password 'cloud'
+    subprocess.run(["mkdir", "-p", "/var/run/sshd"])
+    subprocess.run("echo 'root:void123' | chpasswd", shell=True)
+    # Allow Root Login via SSH
+    with open("/etc/ssh/sshd_config", "a") as f:
+        f.write("\nPermitRootLogin yes\nPasswordAuthentication yes\n")
+    
+    # Start SSH service
+    subprocess.Popen(["/usr/sbin/sshd", "-D"])
+    
+    # Start Ngrok Tunnel for Port 22
+    subprocess.Popen(["./ngrok", "tcp", "22"], stdout=subprocess.DEVNULL)
+    
     return True
 
-start_server()
+start_ngrok_ssh()
 
-# --- THE DISPLAY ---
+st.title("⚡ VOID NGROK TERMINAL")
+
+# 3. GET THE NGROK URL
 try:
-    # Get the SSH String
-    ssh_cmd = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=5).decode("utf-8").strip()
+    # We query the local Ngrok API to find the public URL
+    import requests
+    time.sleep(2)
+    api_url = "http://localhost:4040/api/tunnels"
+    res = requests.get(api_url).json()
+    public_url = res['tunnels'][0]['public_url'] # e.g. tcp://0.tcp.ngrok.io:12345
     
-    # SPLIT IT FOR YOU (So you don't mess up Termius)
-    # Format: ssh username@hostname
-    parts = ssh_cmd.split("@")
-    username = parts[0].replace("ssh ", "")
-    hostname = parts[1]
+    # Parse for Termius
+    address = public_url.replace("tcp://", "").split(":")[0]
+    port = public_url.split(":")[-1]
     
-    st.success("✅ SERVER ONLINE - FULL UBUNTU MODE")
+    st.success("✅ SSH TUNNEL ACTIVE")
+    st.write(f"**Hostname:** `{address}`")
+    st.write(f"**Port:** `{port}`")
+    st.write(f"**Username:** `root`")
+    st.write(f"**Password:** `void123`")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 1. Address (Hostname)")
-        st.code(hostname, language="text")
-    with col2:
-        st.write("### 2. Username")
-        st.code(username, language="text")
-        
-    st.warning("⚠️ INSTRUCTIONS: Copy the Address and Username into Termius. Leave Password EMPTY.")
+except:
+    st.info("⌛ Tunneling... If this stays for 30s, check your Ngrok Token in Secrets.")
 
-except Exception as e:
-    st.info("🔄 Server Initializing... Refresh Page in 5 seconds.")
-
-st.markdown("---")
-st.caption("Running: Ubuntu 22.04 LTS (Containerized) | RAM: ~16GB Shared | CPU: 2 vCPU")
-
-# Only use this if it actually breaks
-if st.button("🧨 FACTORY RESET (Kills Connection)"):
+if st.button("Restart Services"):
     st.cache_resource.clear()
-    subprocess.run(["pkill", "-9", "tmate"])
     st.rerun()
