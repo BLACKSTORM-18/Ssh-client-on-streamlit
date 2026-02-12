@@ -1,66 +1,52 @@
 import streamlit as st
 import subprocess
 import os
-import time
 
-st.set_page_config(page_title="VOID_INFINITE", page_icon="♾️")
+st.set_page_config(page_title="VOID_TERMINAL", page_icon="📟", layout="wide")
 
-# --- 1. THE PERSISTENT WORKER ---
+# --- 1. THE INCEPTION SETUP (Alpine Root) ---
 @st.cache_resource
-def start_persistent_root():
-    # Setup Alpine/Proot if missing
+def setup_alpine():
     if not os.path.exists("./alpine"):
         os.makedirs("./alpine")
+        # Download lite rootfs
         subprocess.run(["wget", "https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/x86_64/alpine-minirootfs-3.18.4-x86_64.tar.gz"], check=True)
         subprocess.run(["tar", "-xzf", "alpine-minirootfs-3.18.4-x86_64.tar.gz", "-C", "./alpine"], check=True)
-
-    # Check if tmate is already running
-    check = subprocess.run(["pgrep", "-x", "tmate"], capture_output=True)
-    if check.returncode != 0:
-        # Start tmate with Inception (Proot)
-        # We use a custom socket and a long-lived session name 'void'
-        cmd = "proot -0 -r ./alpine -b /dev -b /sys -b /proc /bin/sh"
-        subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d", "-s", "void", cmd], close_fds=True)
-        time.sleep(5)
-        subprocess.run(["tmate", "-S", "/tmp/tmate.sock", "wait-for-connection"], timeout=10)
-    
     return True
 
-# Initialize the background process
-start_persistent_root()
+setup_alpine()
 
-# --- 2. THE UI & KEEP-ALIVE DASHBOARD ---
-st.title("♾️ VOID INFINITE ROOT")
+# --- 2. TERMINAL INTERFACE ---
+st.title("📟 VOID@CLOUD_CONSOLE")
+st.caption("Running Alpine Linux (Proot) | Root Access: Enabled")
 
-try:
-    # Fetch the SSH link
-    ssh_cmd = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=5).decode("utf-8").strip()
+if "history" not in st.session_state:
+    st.session_state.history = "Welcome to Void Inception. Type 'help' for info.\n"
+
+# The Terminal Display
+st.text_area("Console Output", value=st.session_state.history, height=400, disabled=True)
+
+# The Command Input
+cmd = st.text_input("root@void:~#", key="cmd_input")
+
+if st.button("Run") or (cmd and cmd != ""):
+    if cmd.lower() == "clear":
+        st.session_state.history = ""
+    else:
+        # Wrap the command in PROOT to execute inside your 'Guest' Alpine Root
+        # -0 fakes the root user
+        full_cmd = f"proot -0 -r ./alpine -b /dev -b /sys -b /proc {cmd}"
+        
+        try:
+            result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            output = result.stdout if result.stdout else result.stderr
+            st.session_state.history += f"\nroot@void:~# {cmd}\n{output}"
+        except Exception as e:
+            st.session_state.history += f"\nroot@void:~# {cmd}\nError: {str(e)}"
     
-    st.success("✅ PERSISTENT ROOT ACTIVE")
-    
-    # Split for Termius
-    parts = ssh_cmd.split("@")
-    user_token = parts[0].replace("ssh ", "")
-    host_addr = parts[1]
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("### 🏠 Hostname")
-        st.code(host_addr)
-    with col2:
-        st.write("### 👤 Username")
-        st.code(user_token)
-
-    st.markdown("---")
-    st.info("🛰️ **PERSISTENCE MODE**: Closing the tab may cause a sleep after 15-30 mins of inactivity.")
-    
-    # Simple UI Heartbeat to show it's working
-    st.write(f"🟢 Last Pulse: {time.strftime('%H:%M:%S')}")
-
-except Exception as e:
-    st.warning("⌛ Awakening Server... If this takes >30s, click Factory Reset.")
-
-if st.button("🔥 Factory Reset"):
-    st.cache_resource.clear()
-    subprocess.run(["pkill", "-9", "tmate"])
+    # Auto-scroll/Refresh logic
     st.rerun()
+
+# --- 3. BACKGROUND PERSISTENCE ---
+st.markdown("---")
+st.info("💡 Tip: To run your bot continuously, use: 'nohup python3 bot.py &' inside the command line.")
