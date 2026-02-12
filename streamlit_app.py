@@ -4,89 +4,89 @@ import os
 import time
 import re
 
-st.set_page_config(page_title="Void Cloud Terminal", page_icon="🌌", layout="centered")
+st.set_page_config(page_title="Void High-Power Cloud", page_icon="💀", layout="wide")
 
-# --- 1. THE SECRET VAULT ---
+# --- 1. THE GATEKEEPER ---
 def check_auth():
     if "auth_ok" not in st.session_state:
         st.session_state.auth_ok = False
-
     if not st.session_state.auth_ok:
-        st.title("🔐 Locked Terminal")
-        
-        # Check if secrets are even set up
+        st.title("🔒 Restricted Access")
         if "auth" not in st.secrets:
-            st.error("⚠️ CRITICAL: Go to App Settings > Secrets and add [auth] password='your_pass'")
+            st.error("CRITICAL: Add [auth] password='...' to Streamlit Secrets!")
             st.stop()
-            
-        pwd = st.text_input("Enter Cloud Key:", type="password")
-        if st.button("Unlock Server"):
+        pwd = st.text_input("Server Key:", type="password")
+        if st.button("Access Terminal"):
             if pwd == st.secrets["auth"]["password"]:
                 st.session_state.auth_ok = True
                 st.rerun()
-            else:
-                st.error("❌ Wrong Key")
         st.stop()
 
 check_auth()
 
-# --- 2. THE BACKGROUND ENGINE ---
+# --- 2. THE POWER-HOUSE ENGINE ---
 @st.cache_resource
-def start_ghost_stack():
-    with st.status("🛠️ Waking up Cloud Services...", expanded=True) as status:
-        # Kill old broken processes
-        subprocess.run(["pkill", "-9", "tmate"], stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-9", "cloudflared"], stderr=subprocess.DEVNULL)
+def launch_full_server():
+    with st.status("🏗️ Booting Full Ubuntu Environment...", expanded=True) as status:
+        # Cleanup old sessions
+        try:
+            subprocess.run(["pkill", "-9", "tmate"], stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-9", "cloudflared"], stderr=subprocess.DEVNULL)
+        except: pass
         
-        st.write("✅ Cleaning old sessions...")
+        st.write("✅ System Cleanup Complete.")
         
-        # Start Tmate (SSH)
-        subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"])
-        st.write("✅ Tmate Tunnel starting...")
-        
-        # Start Cloudflare (IPTV)
+        # Launch Tmate (SSH)
+        try:
+            subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"])
+            st.write("✅ SSH Tunnel Initialized.")
+        except FileNotFoundError:
+            st.error("FATAL: 'tmate' package not found. Check packages.txt!")
+            st.stop()
+            
+        # Download Cloudflare (IPTV/Web)
         if not os.path.exists("./cloudflared"):
-            st.write("📥 Downloading Cloudflare connector...")
+            st.write("📥 Fetching Cloudflare Quick-Tunnel binary...")
             subprocess.run(["wget", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "./cloudflared"])
             subprocess.run(["chmod", "+x", "./cloudflared"])
         
-        st.write("✅ Cloudflare Tunnel zipping up...")
         with open("/tmp/cf.log", "w") as log:
             subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8080"], stdout=log, stderr=log)
+        st.write("✅ Web Tunnel (Port 8080) online.")
         
-        time.sleep(5) # Essential: Wait for links to generate
-        status.update(label="🚀 Cloud Active!", state="complete", expanded=False)
+        time.sleep(7) # Extra time for the cloud to register the links
+        status.update(label="🚀 Server Fully Operational", state="complete", expanded=False)
     return True
 
-start_ghost_stack()
+launch_full_server()
 
-# --- 3. THE CONTROL CENTER ---
-st.title("🌌 Void Cloud Portal")
+# --- 3. THE COMMAND CENTER ---
+st.title("💀 VOID_ROOT@CLOUD")
 st.markdown("---")
 
-# SSH Section
-try:
-    ssh_cmd = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=5).decode("utf-8").strip()
-    st.subheader("🔑 Termius SSH Command")
-    st.code(ssh_cmd, language="bash")
-    st.caption("Paste this into Termius 'Hostname' box. No password needed.")
-except:
-    st.warning("⌛ Generating SSH Tunnel... Hit refresh in 5 seconds.")
+col1, col2 = st.columns(2)
 
-# IPTV Section
+with col1:
+    st.header("⚡ SSH Access")
+    try:
+        ssh_link = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"]).decode("utf-8").strip()
+        st.code(ssh_link, language="bash")
+        st.caption("Paste into Termius Hostname box. Username is the text before '@'.")
+    except:
+        st.warning("SSH link generating... Refresh shortly.")
+
+with col2:
+    st.header("📺 IPTV Public URL")
+    if os.path.exists("/tmp/cf.log"):
+        with open("/tmp/cf.log", "r") as f:
+            links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", f.read())
+            if links:
+                st.success(links[-1])
+                st.caption("Port 8080 is automatically mapped to this URL.")
+            else:
+                st.info("Waiting for Cloudflare link...")
+
 st.markdown("---")
-if os.path.exists("/tmp/cf.log"):
-    with open("/tmp/cf.log", "r") as f:
-        log_data = f.read()
-        links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_data)
-        if links:
-            st.subheader("📺 IPTV Public Link (Port 8080)")
-            st.success(links[-1])
-            st.caption("No bandwidth limits. Use this in your IPTV player.")
-        else:
-            st.info("⌛ Cloudflare link is still being cooked... Wait a moment.")
-
-if st.button("🔄 Refresh Links"):
+if st.button("🔄 Force Reboot Services"):
+    st.cache_resource.clear()
     st.rerun()
-
-st.sidebar.caption(f"Server Heartbeat: {time.ctime()}")
