@@ -1,6 +1,5 @@
-tmate
-procps
-curl
-wget
-git
 proot
+wget
+curl
+git
+procps
