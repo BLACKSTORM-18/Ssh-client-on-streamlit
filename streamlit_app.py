@@ -4,81 +4,64 @@ import os
 import time
 import re
 
-st.set_page_config(page_title="VOID_CLOUD_ROOT", page_icon="💀", layout="wide")
+st.set_page_config(page_title="VOID_PRO_ROOT", page_icon="🔗")
 
-# --- 1. BIOMETRIC-STYLE LOCK ---
-def secure_login():
-    if "authorized" not in st.session_state:
-        st.session_state.authorized = False
+# 1. THE GATEKEEPER
+if "auth" not in st.session_state:
+    st.session_state.auth = False
 
-    if not st.session_state.authorized:
-        st.title("🛡️ SECURE GATEWAY")
-        if "auth" not in st.secrets:
-            st.error("MISSING SECRETS: Add [auth] password='...' in Streamlit Settings.")
-            st.stop()
-        
-        access_key = st.text_input("Enter Root Access Key:", type="password")
-        if st.button("Initialize Server"):
-            if access_key == st.secrets["auth"]["password"]:
-                st.session_state.authorized = True
-                st.rerun()
-            else:
-                st.error("ACCESS DENIED.")
-        st.stop()
+if not st.session_state.auth:
+    pwd = st.text_input("Root Password:", type="password")
+    if st.button("Initialize Server"):
+        if pwd == st.secrets["auth"]["password"]:
+            st.session_state.auth = True
+            st.rerun()
+    st.stop()
 
-secure_login()
-
-# --- 2. THE HEAVY-DUTY ENGINE ---
+# 2. THE FORCE-ACTIVE ENGINE
 @st.cache_resource
-def boot_system():
-    # Kill any zombie processes blocking the ports
-    try:
-        subprocess.run(["pkill", "-9", "tmate"], stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-9", "cloudflared"], stderr=subprocess.DEVNULL)
-    except: pass
+def launch_server():
+    # Force kill any stuck sessions that cause 'Handshake' errors
+    subprocess.run(["pkill", "-9", "tmate"])
+    subprocess.run(["pkill", "-9", "cloudflared"])
     
-    # Start Tmate (The SSH Bridge)
-    # This creates a persistent socket for Termius to grab
+    # Launch Tmate
     subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"])
     
-    # Setup Cloudflare (The Web/IPTV Bridge)
+    # Download Cloudflare
     if not os.path.exists("./cloudflared"):
         subprocess.run(["wget", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "./cloudflared"])
         subprocess.run(["chmod", "+x", "./cloudflared"])
     
-    # Map port 8080 for your IPTV/Web services
+    # Start Cloudflare for IPTV
     with open("/tmp/cf.log", "w") as log:
         subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8080"], stdout=log, stderr=log)
     
     return True
 
-boot_system()
+launch_server()
 
-# --- 3. THE ROOT DASHBOARD ---
-st.title("💀 VOID@CLOUD_SERVER")
-st.markdown("---")
+# 3. THE CONTROL CENTER
+st.title("💀 VOID_FULL_CLOUD")
 
-# SSH Terminal Details
 try:
-    # We use a 10s timeout to ensure the tunnel is fully ready before showing the link
-    ssh_string = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=15).decode("utf-8").strip()
-    st.header("⚡ SSH Root Access")
-    st.code(ssh_string, language="bash")
-    st.info("Paste the WHOLE line above into the Hostname box in Termius.")
-except:
-    st.warning("🔄 System Initializing... Please refresh in 10 seconds.")
+    # We give it more time (15s) to generate a stable link
+    ssh_cmd = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=15).decode("utf-8").strip()
+    st.subheader("🚀 SSH SERVER ACTIVE")
+    st.code(ssh_cmd)
+    
+    # --- THE KEEP-ALIVE SYSTEM ---
+    # This prevents the cloud from freezing your terminal while you are in Termius
+    st.write("---")
+    st.write("🛰️ Server Heartbeat (Keep this tab open):")
+    placeholder = st.empty()
+    for i in range(100):
+        placeholder.text(f"System Pulse: {time.ctime()} | Power: 100%")
+        time.sleep(2) # Slowly update to keep the connection "hot"
 
-# IPTV/Web Details
-st.markdown("---")
-if os.path.exists("/tmp/cf.log"):
-    with open("/tmp/cf.log", "r") as f:
-        log_txt = f.read()
-        cf_links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_txt)
-        if cf_links:
-            st.header("📺 Public Web Entry (Port 8080)")
-            st.success(cf_links[-1])
-            st.caption("Unlimited bandwidth IPTV/Web tunnel is live.")
+except Exception as e:
+    st.warning("Tunneling... Please hit Refresh in 10 seconds.")
 
-if st.button("🔥 Hard Reset All Systems"):
+if st.button("Hard Restart"):
     st.cache_resource.clear()
     st.rerun()
