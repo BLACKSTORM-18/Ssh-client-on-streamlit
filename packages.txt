@@ -10,3 +10,5 @@ build-essential
 python3-dev
 tmux
 neofetch
+nano
+openssh-client
