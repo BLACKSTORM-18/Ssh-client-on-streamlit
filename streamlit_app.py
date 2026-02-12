@@ -2,72 +2,75 @@ import streamlit as st
 import subprocess
 import os
 import time
-import re
 
-st.set_page_config(page_title="VOID_ROOT_SERVER", page_icon="💀")
+st.set_page_config(page_title="VOID_USER_OS", page_icon="👤")
 
-# --- 1. THE GATEKEEPER ---
+# --- 1. SIMPLE AUTH ---
 if "unlocked" not in st.session_state:
     st.session_state.unlocked = False
 
 if not st.session_state.unlocked:
-    st.title("🔐 ROOT GATEWAY")
+    st.title("👤 USER GATEWAY")
     if "auth" not in st.secrets:
         st.error("MISSING SECRETS: Add [auth] password in Streamlit Settings.")
         st.stop()
     
-    pwd = st.text_input("Enter Root Key:", type="password")
-    if st.button("Initialize"):
+    pwd = st.text_input("Enter Access Key:", type="password")
+    if st.button("Unlock"):
         if pwd == st.secrets["auth"]["password"]:
             st.session_state.unlocked = True
             st.rerun()
     st.stop()
 
-# --- 2. THE ENGINE ---
+# --- 2. THE NON-ROOT ENGINE ---
 @st.cache_resource
-def start_root_ssh():
-    # Setup real SSH Server
-    subprocess.run(["mkdir", "-p", "/var/run/sshd"], check=True)
-    # Set root password to 'void123'
-    subprocess.run("echo 'root:void123' | chpasswd", shell=True, check=True)
+def start_user_ssh():
+    # We check if tmate is already running to avoid the 'Handshake' error
+    check = subprocess.run(["pgrep", "-x", "tmate"], capture_output=True)
     
-    # Configure SSH to allow password login
-    with open("/etc/ssh/sshd_config", "w") as f:
-        f.write("PermitRootLogin yes\nPasswordAuthentication yes\n")
-    
-    # Start SSH daemon
-    subprocess.Popen(["/usr/sbin/sshd", "-D"], close_fds=True)
-    
-    # Setup Cloudflare Tunnel
-    if not os.path.exists("./cloudflared"):
-        subprocess.run(["curl", "-L", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-o", "./cloudflared"], check=True)
-        subprocess.run(["chmod", "+x", "./cloudflared"], check=True)
-    
-    # Start the Tunnel for SSH (Port 22)
-    with open("/tmp/cf.log", "w") as log:
-        subprocess.Popen(["./cloudflared", "tunnel", "--url", "ssh://localhost:22"], stdout=log, stderr=log, close_fds=True)
+    if check.returncode != 0:
+        # Start tmate in read-write mode for the current user
+        # We don't use 'sudo' or touch /etc/
+        subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"], close_fds=True)
+        time.sleep(5)
+        # Wait for the cloud to assign an internet link
+        subprocess.run(["tmate", "-S", "/tmp/tmate.sock", "wait-for-connection"], timeout=10)
     
     return True
 
-start_root_ssh()
+start_user_ssh()
 
 # --- 3. THE DASHBOARD ---
-st.title("💀 VOID@UBUNTU_ROOT")
+st.title("👤 VOID@STREAMLIT_USER")
 
-if os.path.exists("/tmp/cf.log"):
-    with open("/tmp/cf.log", "r") as f:
-        log_data = f.read()
-        links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_data)
-        if links:
-            st.success("🛰️ CLOUD TUNNEL ACTIVE")
-            st.write(f"**SSH Address:** `{links[-1].replace('https://', '')}`")
-            st.write("**Username:** `root` | **Password:** `void123` | **Port:** `22` (default)")
-            st.info("In Termius, just paste that Address into the Hostname box.")
-        else:
-            st.info("⌛ Tunneling... Refresh in 10s.")
+try:
+    # Fetch the SSH link
+    ssh_cmd = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=5).decode("utf-8").strip()
+    
+    # Split the link so you don't mess up Termius
+    parts = ssh_cmd.split("@")
+    user_token = parts[0].replace("ssh ", "")
+    host_addr = parts[1]
+    
+    st.success("✅ CLOUD USER SESSION ACTIVE")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("### 🏠 Hostname (Address)")
+        st.code(host_addr, language="text")
+    with col2:
+        st.write("### 🔑 Username (Token)")
+        st.code(user_token, language="text")
+        
+    st.info("In Termius: Use the Address and Username above. LEAVE PASSWORD BLANK.")
+
+except Exception as e:
+    st.warning("⌛ Server Warming Up... Refresh in 10s.")
 
 st.markdown("---")
-if st.button("🔥 Factory Reset Server"):
+st.caption("Status: Non-Root Environment | Disk: Ephemeral | User: adminuser")
+
+if st.button("🔄 Reset User Session"):
     st.cache_resource.clear()
-    subprocess.run(["pkill", "-9", "cloudflared"])
+    subprocess.run(["pkill", "-9", "tmate"])
     st.rerun()
