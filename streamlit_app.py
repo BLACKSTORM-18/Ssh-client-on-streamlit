@@ -4,89 +4,81 @@ import os
 import time
 import re
 
-st.set_page_config(page_title="Void High-Power Cloud", page_icon="💀", layout="wide")
+st.set_page_config(page_title="VOID_CLOUD_ROOT", page_icon="💀", layout="wide")
 
-# --- 1. THE GATEKEEPER ---
-def check_auth():
-    if "auth_ok" not in st.session_state:
-        st.session_state.auth_ok = False
-    if not st.session_state.auth_ok:
-        st.title("🔒 Restricted Access")
+# --- 1. BIOMETRIC-STYLE LOCK ---
+def secure_login():
+    if "authorized" not in st.session_state:
+        st.session_state.authorized = False
+
+    if not st.session_state.authorized:
+        st.title("🛡️ SECURE GATEWAY")
         if "auth" not in st.secrets:
-            st.error("CRITICAL: Add [auth] password='...' to Streamlit Secrets!")
+            st.error("MISSING SECRETS: Add [auth] password='...' in Streamlit Settings.")
             st.stop()
-        pwd = st.text_input("Server Key:", type="password")
-        if st.button("Access Terminal"):
-            if pwd == st.secrets["auth"]["password"]:
-                st.session_state.auth_ok = True
+        
+        access_key = st.text_input("Enter Root Access Key:", type="password")
+        if st.button("Initialize Server"):
+            if access_key == st.secrets["auth"]["password"]:
+                st.session_state.authorized = True
                 st.rerun()
+            else:
+                st.error("ACCESS DENIED.")
         st.stop()
 
-check_auth()
+secure_login()
 
-# --- 2. THE POWER-HOUSE ENGINE ---
+# --- 2. THE HEAVY-DUTY ENGINE ---
 @st.cache_resource
-def launch_full_server():
-    with st.status("🏗️ Booting Full Ubuntu Environment...", expanded=True) as status:
-        # Cleanup old sessions
-        try:
-            subprocess.run(["pkill", "-9", "tmate"], stderr=subprocess.DEVNULL)
-            subprocess.run(["pkill", "-9", "cloudflared"], stderr=subprocess.DEVNULL)
-        except: pass
-        
-        st.write("✅ System Cleanup Complete.")
-        
-        # Launch Tmate (SSH)
-        try:
-            subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"])
-            st.write("✅ SSH Tunnel Initialized.")
-        except FileNotFoundError:
-            st.error("FATAL: 'tmate' package not found. Check packages.txt!")
-            st.stop()
-            
-        # Download Cloudflare (IPTV/Web)
-        if not os.path.exists("./cloudflared"):
-            st.write("📥 Fetching Cloudflare Quick-Tunnel binary...")
-            subprocess.run(["wget", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "./cloudflared"])
-            subprocess.run(["chmod", "+x", "./cloudflared"])
-        
-        with open("/tmp/cf.log", "w") as log:
-            subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8080"], stdout=log, stderr=log)
-        st.write("✅ Web Tunnel (Port 8080) online.")
-        
-        time.sleep(7) # Extra time for the cloud to register the links
-        status.update(label="🚀 Server Fully Operational", state="complete", expanded=False)
+def boot_system():
+    # Kill any zombie processes blocking the ports
+    try:
+        subprocess.run(["pkill", "-9", "tmate"], stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "cloudflared"], stderr=subprocess.DEVNULL)
+    except: pass
+    
+    # Start Tmate (The SSH Bridge)
+    # This creates a persistent socket for Termius to grab
+    subprocess.Popen(["tmate", "-S", "/tmp/tmate.sock", "new-session", "-d"])
+    
+    # Setup Cloudflare (The Web/IPTV Bridge)
+    if not os.path.exists("./cloudflared"):
+        subprocess.run(["wget", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "./cloudflared"])
+        subprocess.run(["chmod", "+x", "./cloudflared"])
+    
+    # Map port 8080 for your IPTV/Web services
+    with open("/tmp/cf.log", "w") as log:
+        subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://localhost:8080"], stdout=log, stderr=log)
+    
     return True
 
-launch_full_server()
+boot_system()
 
-# --- 3. THE COMMAND CENTER ---
-st.title("💀 VOID_ROOT@CLOUD")
+# --- 3. THE ROOT DASHBOARD ---
+st.title("💀 VOID@CLOUD_SERVER")
 st.markdown("---")
 
-col1, col2 = st.columns(2)
+# SSH Terminal Details
+try:
+    # We use a 10s timeout to ensure the tunnel is fully ready before showing the link
+    ssh_string = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"], timeout=15).decode("utf-8").strip()
+    st.header("⚡ SSH Root Access")
+    st.code(ssh_string, language="bash")
+    st.info("Paste the WHOLE line above into the Hostname box in Termius.")
+except:
+    st.warning("🔄 System Initializing... Please refresh in 10 seconds.")
 
-with col1:
-    st.header("⚡ SSH Access")
-    try:
-        ssh_link = subprocess.check_output(["tmate", "-S", "/tmp/tmate.sock", "display", "-p", "#{tmate_ssh}"]).decode("utf-8").strip()
-        st.code(ssh_link, language="bash")
-        st.caption("Paste into Termius Hostname box. Username is the text before '@'.")
-    except:
-        st.warning("SSH link generating... Refresh shortly.")
-
-with col2:
-    st.header("📺 IPTV Public URL")
-    if os.path.exists("/tmp/cf.log"):
-        with open("/tmp/cf.log", "r") as f:
-            links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", f.read())
-            if links:
-                st.success(links[-1])
-                st.caption("Port 8080 is automatically mapped to this URL.")
-            else:
-                st.info("Waiting for Cloudflare link...")
-
+# IPTV/Web Details
 st.markdown("---")
-if st.button("🔄 Force Reboot Services"):
+if os.path.exists("/tmp/cf.log"):
+    with open("/tmp/cf.log", "r") as f:
+        log_txt = f.read()
+        cf_links = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", log_txt)
+        if cf_links:
+            st.header("📺 Public Web Entry (Port 8080)")
+            st.success(cf_links[-1])
+            st.caption("Unlimited bandwidth IPTV/Web tunnel is live.")
+
+if st.button("🔥 Hard Reset All Systems"):
     st.cache_resource.clear()
     st.rerun()
