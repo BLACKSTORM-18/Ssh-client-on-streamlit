@@ -1,0 +1,6 @@
+tmate
+curl
+wget
+htop
+net-tools
+build-essential
