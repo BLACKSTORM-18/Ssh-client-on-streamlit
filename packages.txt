@@ -3,5 +3,4 @@ procps
 curl
 wget
 git
-htop
-tmux
+proot
