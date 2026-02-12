@@ -2,75 +2,90 @@ import streamlit as st
 import subprocess
 import os
 import time
+import requests
 
-st.set_page_config(page_title="VOID_NGROK_CLOUD", page_icon="⚡")
+st.set_page_config(page_title="VOID_NGROK_POWER", page_icon="⚡")
 
-# 1. AUTH CHECK
+# --- 1. THE GATEKEEPER ---
 if "unlocked" not in st.session_state:
     st.session_state.unlocked = False
 
 if not st.session_state.unlocked:
-    pwd = st.text_input("Enter Access Key:", type="password")
-    if st.button("Unlock"):
+    st.title("🔐 ROOT GATEWAY")
+    if "auth" not in st.secrets:
+        st.error("MISSING SECRETS: Add [auth] password and ngrok_token to Streamlit Settings.")
+        st.stop()
+    
+    pwd = st.text_input("Enter Root Key:", type="password")
+    if st.button("Initialize"):
         if pwd == st.secrets["auth"]["password"]:
             st.session_state.unlocked = True
             st.rerun()
     st.stop()
 
-# 2. THE SSH + NGROK ENGINE
+# --- 2. THE ENGINE ---
 @st.cache_resource
-def start_ngrok_ssh():
-    # Setup Ngrok Binary
+def start_root_ssh():
+    # Setup Ngrok properly
     if not os.path.exists("./ngrok"):
-        subprocess.run(["wget", "https://bin.equinox.io/c/b34239N4Z76/ngrok-v3-stable-linux-amd64.tgz"], stderr=subprocess.DEVNULL)
-        subprocess.run(["tar", "-xvzf", "ngrok-v3-stable-linux-amd64.tgz"], stderr=subprocess.DEVNULL)
+        st.toast("📥 Downloading Ngrok...", icon="🚀")
+        # Download the Linux 64-bit version
+        subprocess.run(["wget", "https://bin.equinox.io/c/b34239N4Z76/ngrok-v3-stable-linux-amd64.tgz"], check=True)
+        subprocess.run(["tar", "-xvzf", "ngrok-v3-stable-linux-amd64.tgz"], check=True)
+        subprocess.run(["chmod", "+x", "./ngrok"], check=True)
     
-    # Configure Ngrok
+    # Configure token
     token = st.secrets["auth"]["ngrok_token"]
-    subprocess.run(["./ngrok", "config", "add-authtoken", token])
+    subprocess.run(["./ngrok", "config", "add-authtoken", token], check=True)
 
-    # Setup SSH Server (sshd)
-    # Create a user 'void' with password 'cloud'
+    # Setup real SSH Server
+    # We set root password to 'void123'
     subprocess.run(["mkdir", "-p", "/var/run/sshd"])
     subprocess.run("echo 'root:void123' | chpasswd", shell=True)
-    # Allow Root Login via SSH
-    with open("/etc/ssh/sshd_config", "a") as f:
-        f.write("\nPermitRootLogin yes\nPasswordAuthentication yes\n")
     
-    # Start SSH service
-    subprocess.Popen(["/usr/sbin/sshd", "-D"])
+    # Start SSH daemon
+    subprocess.Popen(["/usr/sbin/sshd", "-D"], close_fds=True)
     
-    # Start Ngrok Tunnel for Port 22
-    subprocess.Popen(["./ngrok", "tcp", "22"], stdout=subprocess.DEVNULL)
+    # Start Ngrok Tunnel
+    subprocess.Popen(["./ngrok", "tcp", "22"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
     
     return True
 
-start_ngrok_ssh()
+start_root_ssh()
 
-st.title("⚡ VOID NGROK TERMINAL")
+# --- 3. THE DASHBOARD ---
+st.title("⚡ VOID@UBUNTU_ROOT")
 
-# 3. GET THE NGROK URL
 try:
-    # We query the local Ngrok API to find the public URL
-    import requests
-    time.sleep(2)
-    api_url = "http://localhost:4040/api/tunnels"
-    res = requests.get(api_url).json()
-    public_url = res['tunnels'][0]['public_url'] # e.g. tcp://0.tcp.ngrok.io:12345
+    time.sleep(3) # Give Ngrok a moment to breathe
+    res = requests.get("http://localhost:4040/api/tunnels").json()
+    public_url = res['tunnels'][0]['public_url'] # tcp://0.tcp.ngrok.io:12345
     
-    # Parse for Termius
-    address = public_url.replace("tcp://", "").split(":")[0]
-    port = public_url.split(":")[-1]
+    # Extract for Termius
+    raw_address = public_url.replace("tcp://", "")
+    address = raw_address.split(":")[0]
+    port = raw_address.split(":")[1]
     
-    st.success("✅ SSH TUNNEL ACTIVE")
-    st.write(f"**Hostname:** `{address}`")
-    st.write(f"**Port:** `{port}`")
-    st.write(f"**Username:** `root`")
-    st.write(f"**Password:** `void123`")
+    st.success("🛰️ CLOUD TUNNEL ACTIVE")
     
-except:
-    st.info("⌛ Tunneling... If this stays for 30s, check your Ngrok Token in Secrets.")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("### 🏠 Hostname")
+        st.code(address, language="text")
+        st.write("### 👤 Username")
+        st.code("root", language="text")
+    
+    with col2:
+        st.write("### 🔌 Port")
+        st.code(port, language="text")
+        st.write("### 🔑 Password")
+        st.code("void123", language="text")
 
-if st.button("Restart Services"):
+except:
+    st.info("⌛ Cooking the tunnel... Refresh in 10s.")
+
+st.markdown("---")
+if st.button("🔥 Factory Reset Server"):
     st.cache_resource.clear()
+    subprocess.run(["pkill", "-9", "ngrok"])
     st.rerun()
