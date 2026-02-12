@@ -1,6 +1,13 @@
 tmate
+procps
 curl
 wget
+git
 htop
 net-tools
+iputils-ping
 build-essential
+python3-dev
+nano
+vim
+tmux
